@@ -48,6 +48,7 @@ export interface PageResult {
   url: string;
   finalUrl: string;
   status: number;
+  frameable: boolean;
   seo: {
     score: number;
     grade: string;
@@ -539,6 +540,9 @@ export async function GET(req: NextRequest) {
   const cacheHeader = headers["cache-control"] ?? "";
   const xCache = headers["x-cache"] ?? "";
   const altSvc = headers["alt-svc"] ?? "";
+  const xfo = (headers["x-frame-options"] ?? "").toLowerCase();
+  const cspHeader = (headers["content-security-policy"] ?? "").toLowerCase();
+  const frameable = !xfo.includes("deny") && !xfo.includes("sameorigin") && !cspHeader.includes("frame-ancestors");
 
   const isHttpsUrl = url.startsWith("https:");
   const httpSrcMatches = isHttpsUrl
@@ -575,6 +579,7 @@ export async function GET(req: NextRequest) {
     url,
     finalUrl: res.url,
     status: res.status,
+    frameable,
     seo: { score, grade: scoreToGrade(score), checks, quickWins },
     tech: detectTech(html, headers),
     performance: {

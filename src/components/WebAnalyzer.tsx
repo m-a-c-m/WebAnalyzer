@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   FiSearch, FiCheckCircle, FiXCircle, FiAlertCircle,
   FiShare2, FiCopy, FiChevronDown, FiChevronUp,
   FiGlobe, FiShield, FiZap, FiLayers, FiTrendingUp,
-  FiRefreshCw, FiMonitor,
+  FiRefreshCw, FiMonitor, FiSmartphone,
 } from "react-icons/fi";
 
 interface Props {
@@ -42,7 +42,7 @@ interface SeoCheck {
 }
 interface TechItem { category: string; name: string; confidence: "high" | "medium" | "low"; }
 interface PageData {
-  url: string; finalUrl: string; status: number;
+  url: string; finalUrl: string; status: number; frameable: boolean;
   seo: { score: number; grade: string; checks: SeoCheck[]; quickWins: SeoCheck[]; };
   tech: TechItem[];
   performance: { ttfb: number; totalMs: number; contentSize: number; compressed: boolean; cached: boolean; http2: boolean; };
@@ -94,7 +94,6 @@ interface CarbonData {
 interface RankData {
   domain: string;
   available: boolean;
-  configured?: boolean;
   pageRankInteger?: number;
   pageRankDecimal?: number;
   globalRank?: string;
@@ -336,64 +335,94 @@ function SectionCard({
   );
 }
 
-function PreviewSection({ url, isEs }: { url: string; isEs: boolean }) {
-  const [state, setState] = useState<"loading" | "loaded" | "error">("loading");
-  const [reloadKey, setReloadKey] = useState(0);
+type DeviceKey = "mobile" | "tablet" | "desktop";
 
-  useEffect(() => { setState("loading"); }, [url, reloadKey]);
+function PreviewSection({ url, isEs, frameable }: { url: string; isEs: boolean; frameable?: boolean }) {
+  const [tab, setTab] = useState<DeviceKey>("mobile");
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerW, setContainerW] = useState(700);
 
-  const shot = `https://image.thum.io/get/width/1280/noanimate/${url}`;
-  let host = url;
-  try { host = new URL(url).host; } catch { /* */ }
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (el.offsetWidth > 0) setContainerW(el.offsetWidth);
+    });
+    ro.observe(el);
+    if (el.offsetWidth > 0) setContainerW(el.offsetWidth);
+    return () => ro.disconnect();
+  }, []);
+
+  if (frameable === false) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-border/20 bg-surface/20 py-10 text-center">
+        <p className="text-sm font-medium text-text-muted">
+          {isEs ? "Vista previa no disponible" : "Preview not available"}
+        </p>
+        <p className="max-w-xs text-xs text-text-muted/50">
+          {isEs
+            ? "Este sitio tiene X-Frame-Options: DENY — no permite cargarse en iframes por política de seguridad."
+            : "This site has X-Frame-Options: DENY — security policy prevents embedding in iframes."}
+        </p>
+      </div>
+    );
+  }
+
+  const viewports: Record<DeviceKey, number> = { mobile: 390, tablet: 768, desktop: 1280 };
+  const iframeH = 700;
+  const viewW = viewports[tab];
+  const scale = containerW / viewW;
+  const renderedH = Math.round(iframeH * scale);
+
+  const tabs: [DeviceKey, React.ReactNode, string][] = [
+    ["mobile", <FiSmartphone key="m" />, `${isEs ? "Móvil" : "Mobile"} · 390px`],
+    ["tablet", <span key="t" className="text-sm leading-none">⊡</span>, `Tablet · 768px`],
+    ["desktop", <FiMonitor key="d" />, `${isEs ? "PC" : "Desktop"} · 1280px`],
+  ];
 
   return (
     <div>
-      <div className="overflow-hidden rounded-xl border border-border/30 bg-surface/30 shadow-lg">
-        <div className="flex items-center gap-2 border-b border-border/20 bg-surface/50 px-3 py-2">
-          <span className="flex gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-red-400/60" />
-            <span className="h-2.5 w-2.5 rounded-full bg-yellow-400/60" />
-            <span className="h-2.5 w-2.5 rounded-full bg-green-400/60" />
-          </span>
-          <span className="ml-1 flex-1 truncate rounded-md bg-surface/60 px-2.5 py-1 text-center text-xs text-text-muted/70">
-            {host}
-          </span>
-        </div>
-        <div className="relative min-h-[200px] bg-surface/10">
-          {state === "loading" && (
-            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
-              <p className="text-xs text-text-muted/50">{isEs ? "Generando captura…" : "Capturing…"}</p>
-            </div>
-          )}
-          {state === "error" ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
-              <p className="text-sm font-medium text-text-muted">{isEs ? "No se pudo generar la captura" : "Could not capture"}</p>
-              <button
-                onClick={() => setReloadKey((k) => k + 1)}
-                className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
-              >
-                {isEs ? "Reintentar" : "Retry"}
-              </button>
-            </div>
-          ) : (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              key={`${url}-${reloadKey}`}
-              src={shot}
-              alt={`Preview of ${url}`}
-              className={`block w-full h-auto transition-opacity duration-500 ${state === "loaded" ? "opacity-100" : "opacity-0"}`}
-              loading="lazy"
-              onLoad={() => setState("loaded")}
-              onError={() => setState("error")}
-            />
-          )}
-        </div>
+      <div className="mb-3 flex flex-wrap gap-2">
+        {tabs.map(([key, icon, label]) => (
+          <button
+            key={key as string}
+            onClick={() => setTab(key as DeviceKey)}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+              tab === key
+                ? "border-primary/40 bg-primary/10 text-primary"
+                : "border-border/20 bg-surface/30 text-text-muted hover:text-text"
+            }`}
+          >
+            {icon}
+            <span>{label}</span>
+          </button>
+        ))}
       </div>
-      <p className="mt-3 text-xs text-text-muted/40">
+      <div
+        ref={containerRef}
+        className="w-full overflow-hidden rounded-lg border border-border/20 bg-surface/10"
+        style={{ height: `${renderedH}px` }}
+      >
+        <iframe
+          key={`${tab}-${url}`}
+          src={url}
+          title={isEs ? "Vista previa" : "Preview"}
+          sandbox="allow-scripts"
+          style={{
+            width: `${viewW}px`,
+            height: `${iframeH}px`,
+            transform: `scale(${scale})`,
+            transformOrigin: "top left",
+            border: "none",
+            pointerEvents: "none",
+            display: "block",
+          }}
+        />
+      </div>
+      <p className="mt-2 text-xs text-text-muted/40">
         {isEs
-          ? "Captura real de la página pública (vía thum.io). La primera carga puede tardar unos segundos. No almacenamos nada."
-          : "Real screenshot of the public page (via thum.io). First load may take a few seconds. We store nothing."}
+          ? "Vista en iframe escalada — sitios con X-Frame-Options: DENY no cargarán. Scripts aislados, sin acceso a tu sesión."
+          : "Scaled iframe view — sites with X-Frame-Options: DENY won't load. Scripts isolated, no session access."}
       </p>
     </div>
   );
@@ -848,23 +877,12 @@ export default function WebAnalyzer({ locale = "es", initialCheck }: Props) {
             {/* Score header */}
             {!loading && globalScore !== null && (
               <div className="flex items-center justify-between rounded-xl border border-border/20 bg-surface/40 p-4">
-                <div className="flex items-center gap-3">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(results.domain)}&sz=64`}
-                    alt=""
-                    width={36}
-                    height={36}
-                    className="h-9 w-9 shrink-0 rounded-lg border border-border/20 bg-surface/60 p-1"
-                    loading="lazy"
-                  />
-                  <div>
-                    <p className="mb-1 text-xs text-text-muted">{results.domain}</p>
-                    <div className="flex items-baseline gap-2">
-                      <span className={`text-4xl font-bold tabular-nums ${scoreColor(globalScore)}`}>{globalScore}</span>
-                      <span className="text-lg text-text-muted">/100</span>
-                      <GradeBadge grade={scoreGrade(globalScore)} />
-                    </div>
+                <div>
+                  <p className="mb-1 text-xs text-text-muted">{results.domain}</p>
+                  <div className="flex items-baseline gap-2">
+                    <span className={`text-4xl font-bold tabular-nums ${scoreColor(globalScore)}`}>{globalScore}</span>
+                    <span className="text-lg text-text-muted">/100</span>
+                    <GradeBadge grade={scoreGrade(globalScore)} />
                   </div>
                 </div>
                 <button
@@ -914,36 +932,26 @@ export default function WebAnalyzer({ locale = "es", initialCheck }: Props) {
             <div className="space-y-3">
               {/* Infrastructure */}
               <SectionCard title={isEs ? "Infraestructura" : "Infrastructure"} icon={<FiGlobe />} status={sMap.infrastructure} expanded={expanded.has("infrastructure")} onToggle={() => toggle("infrastructure")}>
-                {results.rank && results.rank.configured && (
+                {results.rank && results.rank.available && (
                   <div className="mb-4">
                     <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">
                       {isEs ? "Autoridad del dominio" : "Domain authority"}
                     </p>
-                    {results.rank.available ? (
-                      <>
-                        <div className="mb-2 flex items-center gap-3">
-                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/15 text-lg font-bold text-primary">
-                            {results.rank.pageRankInteger}
-                          </div>
-                          <div>
-                            <p className="text-xs font-medium text-text">Open PageRank</p>
-                            <p className="text-xs text-text-muted/60">
-                              {results.rank.pageRankDecimal?.toFixed(2)}/10
-                              {results.rank.globalRank && Number.isFinite(parseInt(results.rank.globalRank)) ? ` · ${isEs ? "posición" : "rank"} #${parseInt(results.rank.globalRank).toLocaleString()}` : ""}
-                            </p>
-                          </div>
-                        </div>
-                        <p className="text-xs text-text-muted/40">
-                          {isEs ? "Fuente: openpagerank.com" : "Source: openpagerank.com"}
+                    <div className="mb-2 flex items-center gap-3">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/15 text-lg font-bold text-primary">
+                        {results.rank.pageRankInteger}
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-text">Open PageRank</p>
+                        <p className="text-xs text-text-muted/60">
+                          {results.rank.pageRankDecimal?.toFixed(2)}/10
+                          {results.rank.globalRank ? ` · ${isEs ? "posición" : "rank"} #${parseInt(results.rank.globalRank).toLocaleString()}` : ""}
                         </p>
-                      </>
-                    ) : (
-                      <p className="text-xs text-text-muted/50">
-                        {isEs
-                          ? "Este dominio aún no tiene datos en Open PageRank — habitual en dominios nuevos o de bajo tráfico. La autoridad se mide por la cantidad y calidad de enlaces entrantes (backlinks)."
-                          : "This domain has no Open PageRank data yet — common for new or low-traffic domains. Authority is based on the number and quality of inbound links (backlinks)."}
-                      </p>
-                    )}
+                      </div>
+                    </div>
+                    <p className="text-xs text-text-muted/40">
+                      {isEs ? "Fuente: openpagerank.com" : "Source: openpagerank.com"}
+                    </p>
                   </div>
                 )}
 
@@ -1319,7 +1327,7 @@ export default function WebAnalyzer({ locale = "es", initialCheck }: Props) {
 
               {/* Preview */}
               <SectionCard title={isEs ? "Vista previa" : "Preview"} icon={<FiMonitor />} status={sMap.preview} expanded={expanded.has("preview")} onToggle={() => toggle("preview")}>
-                <PreviewSection url={results.url} isEs={isEs} />
+                <PreviewSection url={results.url} isEs={isEs} frameable={results.page?.frameable} />
               </SectionCard>
 
               {/* Crawlability */}

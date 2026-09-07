@@ -30,7 +30,6 @@ const schema = z.object({
 export interface RankResult {
   domain: string;
   available: boolean;
-  configured: boolean;
   pageRankInteger?: number;
   pageRankDecimal?: number;
   globalRank?: string;
@@ -61,7 +60,7 @@ export async function GET(req: NextRequest) {
   const apiKey = process.env.OPEN_PAGERANK_KEY;
 
   if (!apiKey) {
-    return NextResponse.json({ domain, available: false, configured: false } satisfies RankResult);
+    return NextResponse.json({ domain, available: false } satisfies RankResult);
   }
 
   try {
@@ -77,26 +76,24 @@ export async function GET(req: NextRequest) {
     );
 
     if (!res.ok) {
-      return NextResponse.json({ domain, available: false, configured: true } satisfies RankResult);
+      return NextResponse.json({ domain, available: false } satisfies RankResult);
     }
 
     const data = (await res.json()) as OprResponse;
     const entry = data.response?.[0];
 
-    const rankValue = entry?.page_rank_integer;
-    if (!entry || entry.status_code !== 200 || rankValue === undefined || rankValue < 0) {
-      return NextResponse.json({ domain, available: false, configured: true } satisfies RankResult);
+    if (!entry || entry.status_code !== 200) {
+      return NextResponse.json({ domain, available: false } satisfies RankResult);
     }
 
     return NextResponse.json({
       domain,
       available: true,
-      configured: true,
       pageRankInteger: entry.page_rank_integer,
       pageRankDecimal: entry.page_rank_decimal,
       globalRank: entry.rank,
     } satisfies RankResult);
   } catch {
-    return NextResponse.json({ domain, available: false, configured: true } satisfies RankResult);
+    return NextResponse.json({ domain, available: false } satisfies RankResult);
   }
 }
